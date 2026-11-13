@@ -82,11 +82,37 @@ awaited before being sent.
 
 ### camelCase vs snake_case
 
-Deluge's wire format uses snake_case. Named option arguments accept
-camelCase and are converted automatically. Responses are also converted
-to camelCase by default; opt out with `camelCaseResponses: false`.
+API method names are camelCase (`rpc.core.addTorrentUrl`). Data is passed
+through unchanged in both directions: option keys must use Deluge's own
+snake_case names (`{ download_location: '/data' }`), and responses keep the
+keys Deluge sent (`status.total_wanted`).
+
+This fork dropped the automatic camelCase/snake_case key conversion that the
+upstream library does. It cost performance and only made the code more
+complicated:
+
+- **Performance:** every response, error and event was walked recursively
+  and copied into a new object just to rename keys. Large responses such as
+  `get_torrents_status` for many torrents paid for this on every call.
+- **Complexity:** two extra dependencies (one untyped, called through
+  `as any`), a `try/catch` that silently swallowed conversion errors, and a
+  table of about 90 duplicated snake_case/camelCase method aliases.
+- **Correctness:** the conversion also renamed keys that are data, not field
+  names, such as tracker names and labels from `get_filter_tree` or plugin
+  keys in `get_config`.
 
 ## Change Log
+
+### Unreleased (breaking)
+
+- **Removed:** automatic key conversion. Responses and events are no longer
+  converted to camelCase, and option objects are no longer converted to
+  snake_case. Deep conversion also rewrote keys that are data, such as tracker
+  names and labels from `get_filter_tree` or plugin keys in `get_config`.
+  The `camelCaseResponses` option is gone.
+- **Removed:** snake_case method aliases (`rpc.core.add_torrent_url` etc.).
+  Use the camelCase names (`rpc.core.addTorrentUrl`).
+- **Removed:** dependencies `camelcase-keys-deep` and `snakecase-keys`.
 
 ### v1.0.1
 

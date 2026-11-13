@@ -3,16 +3,10 @@ import { Socket } from 'net';
 import { promisify } from 'util';
 import { readFile } from 'fs';
 
-import camelCaseKeys from 'camelcase-keys-deep';
-import snakeCaseKeys from 'snakecase-keys';
 import * as pako from 'pako';
 
 import { encode, decode } from 'python-rencode';
-import type {
-  RencodableData,
-  RencodableObject,
-  RencodableArray,
-} from 'python-rencode';
+import type { RencodableData } from 'python-rencode';
 
 import nextPowerOfTwo from 'smallest-power-of-two';
 
@@ -81,8 +75,7 @@ export function isRPCErrorV1(error: ErrorResult): error is ErrorResult {
  * @future Timeout might be added as a response type
  */
 export type RequestResult<RPCResponse extends RencodableData = RencodableData> =
-  | SuccessResult<RPCResponse>
-  | ErrorResult;
+  SuccessResult<RPCResponse> | ErrorResult;
 
 /**
  * Deluge ^1.0.0 uses version 0 (default)
@@ -114,12 +107,6 @@ export default function DelugeRPC(
      */
     protocolVersion?: ProtocolVersion;
     /**
-     * Convert all responses from Deluge to camelCase
-     *
-     * Default subject to change. Currently true
-     */
-    camelCaseResponses?: boolean;
-    /**
      * Value sent as the `client_version` kwarg of `daemon.login`.
      *
      * Deluge 2.x raises `IncompatibleClient` if this is missing or `None`,
@@ -135,9 +122,6 @@ export default function DelugeRPC(
   const debug = getDebug(options.debug);
   // Default protocol version 0
   const protocolVersion = options.protocolVersion || 0;
-
-  // Default true
-  const camelCaseResponses = options.camelCaseResponses ?? true;
 
   const clientVersion = options.clientVersion ?? PACKAGE_VERSION;
 
@@ -235,13 +219,13 @@ export default function DelugeRPC(
     if (type == RESPONSE) {
       const [requestId, data] = payload as [number, RencodableData];
 
-      getResolvers(requestId).resolve(parseResponse(data));
+      getResolvers(requestId).resolve(data);
     } else if (type == ERROR) {
       if (protocolVersion === 0) {
         const [requestId, error, ...extra] = payload as [number, string];
 
         // The API says data is just the exception type but I think it includes all of it
-        getResolvers(requestId).resolve({ error: parseResponse(error), extra });
+        getResolvers(requestId).resolve({ error, extra });
       } else if (protocolVersion === 1) {
         const [requestId, exceptionType, exceptionMsg, traceback] = payload as [
           number,
@@ -258,7 +242,7 @@ export default function DelugeRPC(
       }
     } else if (type == EVENT) {
       const [name, data] = payload as [string, string];
-      events.emit('delugeEvent', { name, data: parseResponse(data) });
+      events.emit('delugeEvent', { name, data });
     } else {
       events.emit('decodingError', 'Invalid payload type received:', type);
     }
@@ -394,16 +378,6 @@ export default function DelugeRPC(
     sent: Promise<RequestSent>;
   };
 
-  // Handle a response. cameCase it if needed and possible
-  function parseResponse(data: RencodableData): RencodableData {
-    if (!camelCaseResponses) return data;
-    // Try catch is easy way to handle
-    try {
-      return (camelCaseKeys as any)(data, { deep: true });
-    } catch (e) {}
-    return data;
-  }
-
   /**
    * Encode and send a Deluge RPC message with Promised responses
    *
@@ -489,16 +463,8 @@ export default function DelugeRPC(
     return content;
   }
 
-  async function handleOptions(options: AwaitableRencodableData) {
-    const opts = await AllPromises(options);
-    if (typeof opts != 'object' || opts === null) return opts;
-    return <RencodableObject | RencodableArray>(
-      (snakeCaseKeys as any)(opts, { deep: true })
-    );
-  }
-
-  // Main API
-  const camelCore = {
+  // Main API. Method names are camelCase; Deluge's wire names are snake_case.
+  const core = {
     addTorrentFile: (
       filename: Awaitable<string>,
       filedump: Awaitable<FileDump>,
@@ -507,7 +473,7 @@ export default function DelugeRPC(
       request<string>('core.add_torrent_file', [
         filename,
         handleFiledump(filedump),
-        handleOptions(torrentOptions),
+        torrentOptions,
       ]),
 
     addTorrentUrl: (
@@ -517,10 +483,8 @@ export default function DelugeRPC(
     ) =>
       request<string>(
         'core.add_torrent_url',
-        [url, handleOptions(torrentOptions)],
-        handleOptions(options as AwaitableRencodableData) as
-          | ObjectAwaitableRencodable
-          | Awaitable<null>,
+        [url, torrentOptions],
+        options as ObjectAwaitableRencodable | Awaitable<null>,
       ),
 
     addTorrentMagnet: (
@@ -528,7 +492,7 @@ export default function DelugeRPC(
       torrentOptions: Awaitable<TorrentOptions | null> = null,
     ) =>
       // TODO: Return type
-      request('core.add_torrent_magnet', [uri, handleOptions(torrentOptions)]),
+      request('core.add_torrent_magnet', [uri, torrentOptions]),
 
     removeTorrent: (
       torrentId: Awaitable<string>,
@@ -593,9 +557,7 @@ export default function DelugeRPC(
       request(
         'core.get_torrent_status',
         [torrentId, keys] as ArrayAwaitableRencodable,
-        handleOptions(options as AwaitableRencodableData) as
-          | ObjectAwaitableRencodable
-          | Awaitable<null>,
+        options as ObjectAwaitableRencodable | Awaitable<null>,
       ),
 
     // TODO: Return type
@@ -607,21 +569,17 @@ export default function DelugeRPC(
       request(
         'core.get_torrents_status',
         [filterDict, keys] as ArrayAwaitableRencodable,
-        handleOptions(options as AwaitableRencodableData) as
-          | ObjectAwaitableRencodable
-          | Awaitable<null>,
+        options as ObjectAwaitableRencodable | Awaitable<null>,
       ),
 
     getFilterTree: (options: {
-      showZeroHits?: Awaitable<boolean>;
-      hideCats?: Awaitable<Awaitable<string>[]>;
+      show_zero_hits?: Awaitable<boolean>;
+      hide_cats?: Awaitable<Awaitable<string>[]>;
     }) =>
       // TODO: Return type
       request(
         'core.get_filter_tree',
-        handleOptions(options as AwaitableRencodableData) as
-          | ObjectAwaitableRencodable
-          | Awaitable<null>,
+        options as ObjectAwaitableRencodable | Awaitable<null>,
       ),
 
     getSessionState: () =>
@@ -671,7 +629,7 @@ export default function DelugeRPC(
       // TODO: Return type
       request('core.set_torrent_options', [
         torrentIds,
-        handleOptions(torrentOptions),
+        torrentOptions,
       ] as ArrayAwaitableRencodable),
 
     setTorrentTrackers: (
@@ -734,7 +692,7 @@ export default function DelugeRPC(
     getFreeSpace: () => request('core.get_free_space'),
     getLibtorrentVersion: () => request('core.get_libtorrent_version'),
   };
-  const camelDaemon = {
+  const daemon = {
     // TODO: Return types
 
     getMethodList: () => request('daemon.get_method_list'),
@@ -747,105 +705,6 @@ export default function DelugeRPC(
         // Deluge 2.x raises IncompatibleClient if this is None. 1.x ignores it.
         { client_version: clientVersion },
       ),
-  };
-
-  // Final API with camelCase or snake_case
-  // We could do this more programmatically but this helps the TypeScript Compiler more
-  const core = {
-    add_torrent_file: camelCore.addTorrentFile,
-    addTorrentFile: camelCore.addTorrentFile,
-    add_torrent_url: camelCore.addTorrentUrl,
-    addTorrentUrl: camelCore.addTorrentUrl,
-    add_torrent_magnet: camelCore.addTorrentMagnet,
-    addTorrentMagnet: camelCore.addTorrentMagnet,
-    remove_torrent: camelCore.removeTorrent,
-    removeTorrent: camelCore.removeTorrent,
-    get_session_status: camelCore.getSessionStatus,
-    getSessionStatus: camelCore.getSessionStatus,
-    get_cache_status: camelCore.getCacheStatus,
-    getCacheStatus: camelCore.getCacheStatus,
-    force_reannounce: camelCore.forceReannounce,
-    forceReannounce: camelCore.forceReannounce,
-    pause_torrent: camelCore.pauseTorrent,
-    pauseTorrent: camelCore.pauseTorrent,
-    connect_peer: camelCore.connectPeer,
-    connectPeer: camelCore.connectPeer,
-    move_storage: camelCore.moveStorage,
-    moveStorage: camelCore.moveStorage,
-    pause_all_torrents: camelCore.pauseAllTorrents,
-    pauseAllTorrents: camelCore.pauseAllTorrents,
-    resume_all_torrents: camelCore.resumeAllTorrents,
-    resumeAllTorrents: camelCore.resumeAllTorrents,
-    resume_torrent: camelCore.resumeTorrent,
-    resumeTorrent: camelCore.resumeTorrent,
-    get_torrent_status: camelCore.getTorrentStatus,
-    getTorrentStatus: camelCore.getTorrentStatus,
-    get_torrents_status: camelCore.getTorrentsStatus,
-    getTorrentsStatus: camelCore.getTorrentsStatus,
-    get_filter_tree: camelCore.getFilterTree,
-    getFilterTree: camelCore.getFilterTree,
-    get_session_state: camelCore.getSessionState,
-    getSessionState: camelCore.getSessionState,
-    get_config: camelCore.getConfig,
-    getConfig: camelCore.getConfig,
-    get_config_value: camelCore.getConfigValue,
-    getConfigValue: camelCore.getConfigValue,
-    get_config_values: camelCore.getConfigValues,
-    getConfigValues: camelCore.getConfigValues,
-    set_config: camelCore.setConfig,
-    setConfig: camelCore.setConfig,
-    get_listen_port: camelCore.getListenPort,
-    getListenPort: camelCore.getListenPort,
-    get_num_connections: camelCore.getNumConnections,
-    getNumConnections: camelCore.getNumConnections,
-    get_available_plugins: camelCore.getAvailablePlugins,
-    getAvailablePlugins: camelCore.getAvailablePlugins,
-    get_enabled_plugins: camelCore.getEnabledPlugins,
-    getEnabledPlugins: camelCore.getEnabledPlugins,
-    enable_plugin: camelCore.enablePlugin,
-    enablePlugin: camelCore.enablePlugin,
-    disable_plugin: camelCore.disablePlugin,
-    disablePlugin: camelCore.disablePlugin,
-    force_recheck: camelCore.forceRecheck,
-    forceRecheck: camelCore.forceRecheck,
-    set_torrent_options: camelCore.setTorrentOptions,
-    setTorrentOptions: camelCore.setTorrentOptions,
-    set_torrent_trackers: camelCore.setTorrentTrackers,
-    setTorrentTrackers: camelCore.setTorrentTrackers,
-    get_path_size: camelCore.getPathSize,
-    getPathSize: camelCore.getPathSize,
-    create_torrent: camelCore.createTorrent,
-    createTorrent: camelCore.createTorrent,
-    upload_plugin: camelCore.uploadPlugin,
-    uploadPlugin: camelCore.uploadPlugin,
-    rescan_plugins: camelCore.rescanPlugins,
-    rescanPlugins: camelCore.rescanPlugins,
-    rename_files: camelCore.renameFiles,
-    renameFiles: camelCore.renameFiles,
-    rename_folder: camelCore.renameFolder,
-    renameFolder: camelCore.renameFolder,
-    queue_top: camelCore.queueTop,
-    queueTop: camelCore.queueTop,
-    queue_up: camelCore.queueUp,
-    queueUp: camelCore.queueUp,
-    queue_down: camelCore.queueDown,
-    queueDown: camelCore.queueDown,
-    queue_bottom: camelCore.queueBottom,
-    queueBottom: camelCore.queueBottom,
-    glob: camelCore.glob,
-    test_listen_port: camelCore.testListenPort,
-    testListenPort: camelCore.testListenPort,
-    get_free_space: camelCore.getFreeSpace,
-    getFreeSpace: camelCore.getFreeSpace,
-    get_libtorrent_version: camelCore.getLibtorrentVersion,
-    getLibtorrentVersion: camelCore.getLibtorrentVersion,
-  };
-  const daemon = {
-    get_method_list: camelDaemon.getMethodList,
-    getMethodList: camelDaemon.getMethodList,
-    info: camelDaemon.info,
-    shutdown: camelDaemon.shutdown,
-    login: camelDaemon.login,
   };
 
   function detectProtocolVersion(): Request<ProtocolVersion> {

@@ -151,7 +151,7 @@ describe('response decoding (protocol v1)', () => {
     expect(status.peers).toHaveLength(2);
     expect(status.peers[0].client).toBe('qBittorrent/5.1.4');
     expect(status.peers[0].ip).toBe('198.51.100.200:3344');
-    expect(status.peers[0].upSpeed).toBe(21113);
+    expect(status.peers[0].up_speed).toBe(21113);
     expect(status.peers[1].ip).toBe('203.0.113.147:47438');
   });
 
