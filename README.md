@@ -82,11 +82,56 @@ awaited before being sent.
 
 ### camelCase vs snake_case
 
-Deluge's wire format uses snake_case. Named option arguments accept
-camelCase and are converted automatically. Responses are also converted
-to camelCase by default; opt out with `camelCaseResponses: false`.
+API method names are camelCase (`rpc.core.addTorrentUrl`). Data is passed
+through unchanged in both directions: option keys must use Deluge's own
+snake_case names (`{ download_location: '/data' }`), and responses keep the
+keys Deluge sent (`status.total_wanted`).
+
+This fork dropped the automatic camelCase/snake_case key conversion that the
+upstream library does. It cost performance and only made the code more
+complicated:
+
+- **Performance:** every response, error and event was walked recursively
+  and copied into a new object just to rename keys. Large responses such as
+  `get_torrents_status` for many torrents paid for this on every call.
+- **Complexity:** two extra dependencies (one untyped, called through
+  `as any`), a `try/catch` that silently swallowed conversion errors, and a
+  table of about 90 duplicated snake_case/camelCase method aliases.
+- **Correctness:** the conversion also renamed keys that are data, not field
+  names, such as tracker names and labels from `get_filter_tree` or plugin
+  keys in `get_config`.
 
 ## Change Log
+
+### Unreleased (breaking)
+
+- **Removed:** automatic key conversion. Responses and events are no longer
+  converted to camelCase, and option objects are no longer converted to
+  snake_case. Deep conversion also rewrote keys that are data, such as tracker
+  names and labels from `get_filter_tree` or plugin keys in `get_config`.
+  The `camelCaseResponses` option is gone.
+- **Removed:** snake_case method aliases (`rpc.core.add_torrent_url` etc.).
+  Use the camelCase names (`rpc.core.addTorrentUrl`).
+- **Removed:** dependencies `camelcase-keys-deep` and `snakecase-keys`.
+
+### v1.0.1
+
+- **Fixed:** Deluge 2.x (protocol v1) responses were decoded five bytes short.
+  The receive path ended the payload slice at `payloadLength` rather than at
+  `packetLength`, and `Buffer.slice` takes an end offset rather than a count.
+  The lost bytes are the Adler-32 trailer plus the final deflate byte, which
+  usually holds only the end-of-block code and padding — so most responses
+  still decoded and the bug stayed hidden. When that byte carried real symbol
+  bits the inflated output came up short and rencode threw
+  `Tried to access data[N] but data len is: N`. Reported and fixed by
+  [@dkacperski97](https://github.com/dkacperski97) in
+  [#16](https://github.com/cinderblock/node-deluge-rpc/pull/16).
+- **Fixed:** A packet that fails to decode is now reported via the
+  `decodingError` event and skipped, instead of throwing out of the socket
+  `data` handler as an uncaught exception that took the process down. Packets
+  behind the bad one still parse.
+- **Tests:** First coverage of the protocol v1 receive path, replaying a real
+  frame captured off a Deluge 2.2 daemon.
 
 ### v1.0.0
 

@@ -14,7 +14,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -26,7 +26,7 @@ jobs:
 
       # npm CLI for trusted-publishing OIDC exchange + provenance signing.
       # No registry-url on setup-node — its placeholder authToken blocks OIDC.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - run: npm install -g npm@latest
