@@ -16,6 +16,24 @@ npm install deluge-rpc-socket
 
 ESM-only. Requires Bun ≥ 1.3 or Node ≥ 22.
 
+### Install this fork from GitHub
+
+The registry package above is upstream. To use this fork, install it
+straight from GitHub with npm:
+
+```bash
+npm install github:dkacperski97/node-deluge-rpc
+```
+
+`dist/` is not committed. npm runs the `prepare` script (`tsc`) when it
+installs a git dependency, so the package is built during install.
+
+> **TODO, to be reconsidered:** this does not work with Bun. Bun blocks
+> dependency lifecycle scripts by default, and even with the package in
+> `trustedDependencies` it does not install a git dependency's
+> devDependencies, so `tsc` is missing and `prepare` fails. Options: commit
+> `dist/` to the repo, or publish built output to a separate branch from CI.
+
 ## Usage
 
 ```ts
@@ -113,6 +131,9 @@ complicated:
 - **Removed:** snake_case method aliases (`rpc.core.add_torrent_url` etc.).
   Use the camelCase names (`rpc.core.addTorrentUrl`).
 - **Removed:** dependencies `camelcase-keys-deep` and `snakecase-keys`.
+- **Changed:** `prepublishOnly` replaced with `prepare` (`tsc`), so npm
+  builds `dist/` when installing from GitHub. `prepare` also runs before
+  `npm publish`.
 
 ### v1.0.1
 

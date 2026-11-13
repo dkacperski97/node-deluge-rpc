@@ -38,7 +38,7 @@
     "test": "bun test src",
     "lint": "tsc --noEmit",
     "format": "prettier --write .",
-    "prepublishOnly": "bun run build"
+    "prepare": "tsc"
   },
   "repository": {
     "type": "git",
