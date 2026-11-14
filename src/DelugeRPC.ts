@@ -5,11 +5,12 @@ import { readFile } from 'fs';
 
 import * as pako from 'pako';
 
-import { encode, decode } from 'python-rencode';
+import { encode } from 'python-rencode';
 import type { RencodableData } from 'python-rencode';
 
 import nextPowerOfTwo from 'smallest-power-of-two';
 
+import { decode } from './rencode/decode.js';
 import { AllPromises } from './utils/AllPromises.js';
 
 import type {
@@ -264,9 +265,7 @@ export default function DelugeRPC(
         let payload;
         try {
           // Decode payload
-          payload = decode(
-            Buffer.from(pako.inflate(buffer.slice(0, currentLength))),
-          );
+          payload = decode(pako.inflate(buffer.slice(0, currentLength)));
           // Remove parsed data, only if decoding did not fail
           removeBufferBeginning(currentLength);
         } catch (err) {
@@ -305,9 +304,7 @@ export default function DelugeRPC(
         // Report it, drop exactly this packet, and carry on with the next one.
         let payload;
         try {
-          payload = decode(
-            Buffer.from(pako.inflate(buffer.slice(5, packetLength))),
-          );
+          payload = decode(pako.inflate(buffer.slice(5, packetLength)));
         } catch (err) {
           debug('Error decoding packet. Skipping it.');
           debug(err);
